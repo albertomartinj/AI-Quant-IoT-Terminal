@@ -1,0 +1,13 @@
+# Virtual environments
+venv/
+.venv/
+
+# IDE configuration (JetBrains)
+.idea/
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+
+# Environment variables and secrets (future-proofing)
+.env*.so
