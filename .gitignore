@@ -1,25 +1,27 @@
-# Virtual environments
+# Environment Variables
+.env
+.venv
 venv/
-.venv/
-wsl-env/
+env/
 
-# IDE configuration (JetBrains)
-.idea/
-
-# Python cache and compiled files
+# Python
 __pycache__/
 *.pyc
-*.so
-
-# Environment variables and secrets (future-proofing)
-.env
+*.pyo
 
 # Node.js
 node_modules/
-dist/
-.env.local
+MODULE4-Dashboard/node_modules/
+package-lock.json
+
+# IDEs
+.vscode/
+.idea/
 
 # Databases
-*.db
-*.sqlite
 quant_data.db
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db

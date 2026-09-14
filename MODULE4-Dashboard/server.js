@@ -2,9 +2,39 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
+const crypto = require('crypto');
+
+// Load environment variables from the root .env file
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Setup Encryption Key
+const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY || '', 'hex');
+
+/**
+ * Decrypts AES-256-GCM hex string back to float.
+ */
+function decryptData(hexString) {
+    if (!hexString) return null;
+    try {
+        const data = Buffer.from(hexString, 'hex');
+        const nonce = data.slice(0, 12);
+        const ciphertext = data.slice(12, data.length - 16);
+        const authTag = data.slice(data.length - 16);
+
+        const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, nonce);
+        decipher.setAuthTag(authTag);
+        let decrypted = decipher.update(ciphertext, null, 'utf8');
+        decrypted += decipher.final('utf8');
+        
+        return parseFloat(decrypted);
+    } catch (error) {
+        console.error('[Security Error] Failed to decrypt data:', error.message);
+        return null;
+    }
+}
 
 // Enable Cross-Origin Resource Sharing (CORS) to allow requests from the frontend
 app.use(cors());
@@ -61,8 +91,14 @@ function getLatestPortfolioStatus() {
         db.get(sql, [], (err, row) => {
             if (err) {
                 reject(err);
-            } else {
+            } else if (row) {
+                // Decrypt sensitive metrics before sending to the client
+                row.current_price = decryptData(row.current_price);
+                row.entry_price = decryptData(row.entry_price);
+                row.stop_loss_threshold = decryptData(row.stop_loss_threshold);
                 resolve(row);
+            } else {
+                resolve(null);
             }
         });
     });

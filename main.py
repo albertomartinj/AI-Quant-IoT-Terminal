@@ -6,6 +6,24 @@ import os
 import sys
 import sqlite3
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+# Load environment variables
+load_dotenv()
+
+# Setup Encryption (AES-256-GCM)
+encryption_key_hex = os.getenv("ENCRYPTION_KEY")
+if not encryption_key_hex:
+    raise ValueError("CRITICAL: ENCRYPTION_KEY missing in .env file.")
+encryption_key = bytes.fromhex(encryption_key_hex)
+aesgcm = AESGCM(encryption_key)
+
+def encrypt_data(data_str):
+    """Encrypts a string using AES-256-GCM with a random nonce."""
+    nonce = os.urandom(12)
+    ciphertext = aesgcm.encrypt(nonce, data_str.encode('utf-8'), None)
+    return (nonce + ciphertext).hex()
 
 # Add submodules to Python path so we can import them
 sys.path.append(os.path.join(os.path.dirname(__file__), 'MODEL1'))
@@ -39,6 +57,11 @@ def save_to_dashboard_db(asset, current_price, entry_price, stop_loss_pct, senti
     """
     current_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     try:
+        # Encrypt sensitive financial metrics
+        encrypted_current_price = encrypt_data(str(current_price))
+        encrypted_entry_price = encrypt_data(str(entry_price))
+        encrypted_stop_loss = encrypt_data(str(stop_loss_pct))
+        
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
@@ -47,12 +70,12 @@ def save_to_dashboard_db(asset, current_price, entry_price, stop_loss_pct, senti
                 stop_loss_threshold, sentiment_label, action_signal, alert_severity
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            current_time, asset, float(current_price), float(entry_price),
-            float(stop_loss_pct), sentiment_label, action_signal, severity
+            current_time, asset, encrypted_current_price, encrypted_entry_price,
+            encrypted_stop_loss, sentiment_label, action_signal, severity
         ))
         conn.commit()
         conn.close()
-        print(f"[Module 4] 💾 Saved {asset} metrics to quant_data.db for UI Dashboard.")
+        print(f"[Module 4] 💾 Saved encrypted {asset} metrics to quant_data.db for UI Dashboard.")
     except Exception as e:
         print(f"[Module 4 Error] Could not save {asset} data to database: {e}")
 
@@ -67,7 +90,11 @@ def main():
         'GLD': {'entry_price': 375.00, 'stop_loss_pct': 3.0},
         'URA': {'entry_price': 42.00, 'stop_loss_pct': 8.0}
     }
-    NEWS_API_KEY = "fb65f574de0846318e071fa3c9dcfd37"
+    NEWS_API_KEY = os.getenv("NEWS_API_KEY")
+    if not NEWS_API_KEY:
+        print("Warning: NEWS_API_KEY not found in .env. Sentiment analysis may fail.")
+        NEWS_API_KEY = "dummy_key_if_none"
+    
     target_tickers = list(portfolio.keys())
     historical_days = 252
     
