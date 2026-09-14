@@ -1,0 +1,22 @@
+{
+  "name": "ai-quant-dashboard",
+  "version": "1.0.0",
+  "description": "Module 4: Dashboard and Usability for AI-Driven Secure Quant & IoT Terminal",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "axios": "^1.20.0",
+    "cors": "^2.8.6",
+    "express": "^4.22.2",
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.6.0",
+    "nodemon": "^3.0.1",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3"
+  }
+}

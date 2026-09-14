@@ -1,6 +1,7 @@
 # Virtual environments
 venv/
 .venv/
+wsl-env/
 
 # IDE configuration (JetBrains)
 .idea/
@@ -8,7 +9,17 @@ venv/
 # Python cache and compiled files
 __pycache__/
 *.pyc
+*.so
 
 # Environment variables and secrets (future-proofing)
-.env*.so
-wsl-env/
+.env
+
+# Node.js
+node_modules/
+dist/
+.env.local
+
+# Databases
+*.db
+*.sqlite
+quant_data.db

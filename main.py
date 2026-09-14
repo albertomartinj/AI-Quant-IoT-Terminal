@@ -1,62 +1,166 @@
 """
-AI-Driven Secure Quant & IoT Terminal - Main Entry Point
-Connects Module 1 (Financial Data/NLP) with Module 2 (C Hardware Acceleration).
+AI-Driven Secure Quant & IoT Terminal - Main Master Orchestrator
+Coordinates Module 1 (Data/NLP), Module 2 (C Math), Module 3 (IoT), and Module 4 (Dashboard DB).
 """
 import os
 import sys
-import random
+import sqlite3
+from datetime import datetime, timezone
 
-# Add MODEL2 to the Python path so we can import our C bridge
+# Add submodules to Python path so we can import them
+sys.path.append(os.path.join(os.path.dirname(__file__), 'MODEL1'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'MODEL2'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'MODULE3'))
 
+# Import Module 1 components (Data & NLP)
+from market_data_ingestion import fetch_closing_prices
+from news_sentiment import fetch_financial_news, analyze_headlines_sentiment
+from trading_logic import evaluate_trading_signal
+
+# Import Module 2 component (Hardware Risk Engine)
 try:
     from bridge import QuantCoreBridge
 except ImportError:
-    print("Error: Could not find 'bridge.py' in the MODEL2 directory.")
-    sys.exit(1)
+    QuantCoreBridge = None
+    print("Warning: Could not find 'bridge.py' in the MODEL2 directory. Proceeding without hardware acceleration.")
 
-def get_module1_returns(assets: list, days: int) -> list:
+# Import Module 3 component (IoT Trigger)
+try:
+    from iot_trigger import trigger_physical_alarm
+except ImportError:
+    def trigger_physical_alarm(asset, action, severity): pass
+
+# Database path for Module 4 (React Dashboard)
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'quant_data.db'))
+
+def save_to_dashboard_db(asset, current_price, entry_price, stop_loss_pct, sentiment_label, action_signal, severity):
     """
-    Simulates Module 1 fetching historical returns via APIs (e.g., yfinance).
-    TODO: Replace this mock function with your actual Module 1 API calls.
+    Saves the processed metrics into SQLite for the Node.js API (Module 4) to consume in real-time.
     """
-    print(f"[Module 1] Fetching historical market data for {len(assets)} assets over {days} days...")
-    
-    # Generating mock daily returns between -2% and +2% for demonstration
-    # The output is a 2D list: [asset_1_returns, asset_2_returns, ...]
-    return [[random.uniform(-0.02, 0.02) for _ in range(days)] for _ in assets]
+    current_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO portfolio_metrics (
+                timestamp, asset_symbol, current_price, entry_price, 
+                stop_loss_threshold, sentiment_label, action_signal, alert_severity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            current_time, asset, float(current_price), float(entry_price),
+            float(stop_loss_pct), sentiment_label, action_signal, severity
+        ))
+        conn.commit()
+        conn.close()
+        print(f"[Module 4] 💾 Saved {asset} metrics to quant_data.db for UI Dashboard.")
+    except Exception as e:
+        print(f"[Module 4 Error] Could not save {asset} data to database: {e}")
 
 def main():
-    print("=== AI-Driven Secure Quant Terminal ===")
+    print("="*60)
+    print("🛡️  AI-Driven Secure Quant Terminal - Master Pipeline 🛡️")
+    print("="*60)
     
     # 1. System Configuration
-    portfolio_assets = ['AAPL', 'MSFT', 'GOOGL']
-    historical_days = 252 # Typical number of trading days in a single year
+    portfolio = {
+        'AAPL': {'entry_price': 330.00, 'stop_loss_pct': 5.0},
+        'GLD': {'entry_price': 375.00, 'stop_loss_pct': 3.0},
+        'URA': {'entry_price': 42.00, 'stop_loss_pct': 8.0}
+    }
+    NEWS_API_KEY = "fb65f574de0846318e071fa3c9dcfd37"
+    target_tickers = list(portfolio.keys())
+    historical_days = 252
     
-    # 2. Data Ingestion (Module 1)
-    returns_data = get_module1_returns(portfolio_assets, historical_days)
-    num_assets = len(portfolio_assets)
+    # ---------------------------------------------------------
+    # MODULE 1: Data Ingestion
+    # ---------------------------------------------------------
+    print("\n>>> [MODULE 1] Fetching Market Prices...")
+    # Using 10 days back to ensure we hit trading days even on weekends
+    latest_prices_df = fetch_closing_prices(target_tickers, days_back=10)
     
-    # 3. Initialize Hardware Acceleration Engine (Module 2)
-    try:
-        engine = QuantCoreBridge()
-    except RuntimeError as e:
-        print(f"\n[Hardware Engine Error]: {e}")
-        print("Please ensure libquant_core.so is compiled in the MODEL2 folder.")
+    if latest_prices_df.empty:
+        print("CRITICAL ERROR: No market data retrieved. Network/Proxy might be blocking.")
         return
 
-    print("[Module 2] Delegating covariance calculations to C engine...")
+    # Extract historical matrix for Module 2 and latest prices for logic
+    returns_matrix = [latest_prices_df[ticker].pct_change().dropna().tolist() for ticker in target_tickers]
+    current_prices = latest_prices_df.iloc[-1]
     
-    # 4. Execute Low-Level Risk Calculations
-    cov_matrix = engine.get_covariance_matrix(returns_data, num_assets, historical_days)
-    
-    # 5. Display the Final System Output
-    print("\n--- Portfolio Covariance Matrix (Hardware Accelerated) ---")
-    for i, row in enumerate(cov_matrix):
-        formatted_row = [f"{val:8.6f}" for val in row]
-        print(f"{portfolio_assets[i]:<6} [{', '.join(formatted_row)}]")
+    # ---------------------------------------------------------
+    # MODULE 2: Hardware Acceleration Risk Engine
+    # ---------------------------------------------------------
+    print("\n>>> [MODULE 2] Initializing C-Level Hardware Risk Engine...")
+    if QuantCoreBridge:
+        try:
+            engine = QuantCoreBridge()
+            # Feed real downloaded data to C Engine instead of mock data
+            num_assets = len(target_tickers)
+            # The C engine expects arrays of length 'historical_days'. 
+            # We downloaded 10 days, so we pass the exact length we have.
+            actual_days = len(returns_matrix[0])
+            print(f"Delegating covariance calculations for {num_assets} assets over {actual_days} days to C engine...")
+            
+            cov_matrix = engine.get_covariance_matrix(returns_matrix, num_assets, actual_days)
+            
+            print("\n--- Portfolio Covariance Matrix (Hardware Accelerated) ---")
+            for i, row in enumerate(cov_matrix):
+                formatted_row = [f"{val:8.6f}" for val in row]
+                print(f"{target_tickers[i]:<6} [{', '.join(formatted_row)}]")
+        except Exception as e:
+            print(f"[Module 2 Error]: {e}. Proceeding without hardware math.")
+    else:
+        print("Module 2 skipped.")
+
+    # ---------------------------------------------------------
+    # MODULE 1 & 3 & 4: NLP, Logic, IoT, and Dashboard
+    # ---------------------------------------------------------
+    print("\n>>> [MODULE 1, 3, 4] Analyzing Sentiment, Logic, and Broadcasting...\n")
+    for asset in target_tickers:
+        print(f"--- Analyzing {asset} ---")
         
-    print("\nSystem execution completed successfully.")
+        entry_price = portfolio[asset]['entry_price']
+        current_price = current_prices[asset]
+        stop_loss_pct = portfolio[asset]['stop_loss_pct']
+
+        # FinBERT Sentiment
+        print(f"[Module 1] Fetching NLP news sentiment for {asset}...")
+        headlines = fetch_financial_news(query=asset, api_key=NEWS_API_KEY, limit=5)
+        sentiment_results = analyze_headlines_sentiment(headlines)
+
+        # Cross-reference price and sentiment
+        signal_report = evaluate_trading_signal(
+            asset_name=asset,
+            entry_price=entry_price,
+            current_price=current_price,
+            stop_loss_pct=stop_loss_pct,
+            sentiment_results=sentiment_results
+        )
+
+        action = signal_report['Action']
+        sentiment_label = signal_report['Sentiment']
+        print(f"-> SIGNAL: {action} (Reason: {signal_report['Reason']})")
+
+        # Determine Severity
+        severity = 'CRITICAL' if 'TRIGGER' in action else ('WARNING' if action != 'HOLD' else 'NORMAL')
+
+        # MODULE 3: IoT Physical Trigger
+        trigger_physical_alarm(asset, action, severity)
+
+        # MODULE 4: Save to Dashboard Database
+        save_to_dashboard_db(
+            asset=asset, 
+            current_price=current_price, 
+            entry_price=entry_price, 
+            stop_loss_pct=stop_loss_pct, 
+            sentiment_label=sentiment_label, 
+            action_signal=action, 
+            severity=severity
+        )
+        print("")
+
+    print("="*60)
+    print("✅ System execution completed successfully. Pipeline sealed.")
+    print("="*60)
 
 if __name__ == "__main__":
     main()

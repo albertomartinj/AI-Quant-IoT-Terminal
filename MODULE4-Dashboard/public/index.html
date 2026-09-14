@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Viewport meta tag is essential for responsive design on mobile and desktop -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quant & IoT Dashboard</title>
+    
+    <!-- 
+      Tailwind CSS via CDN for rapid prototyping and styling. 
+      In a production environment, this should be built via PostCSS.
+    -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Configuration for Tailwind to enforce accessible color contrasts -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        // High contrast colors for accessibility (WCAG AAA compliance)
+                        alertRed: '#D93025', // Deep red for stop-loss warnings
+                        alertBg: '#FCE8E6',  // Light red background for alerts
+                        textPrimary: '#202124',
+                        textSecondary: '#5F6368',
+                        accentBlue: '#1A73E8'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        /* Custom styles to enhance visual hierarchy and reduce cognitive load */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #F8F9FA; /* Neutral, non-distracting background */
+        }
+        
+        .card-shadow {
+            /* Soft shadow for depth, grouping related information together */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="text-textPrimary">
+
+    <!-- 
+      Main Container: 
+      Uses CSS Grid for a clean, structural layout.
+    -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Header Section -->
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold">Terminal Dashboard</h1>
+                <p class="text-textSecondary mt-1">AI-Driven Secure Quant & IoT System</p>
+            </div>
+            <!-- Minimalist status indicator -->
+            <div class="flex items-center space-x-2">
+                <span class="h-3 w-3 rounded-full bg-green-500"></span>
+                <span class="text-sm font-medium">System Online</span>
+            </div>
+        </header>
+
+        <!-- 
+          Alert Banner Section (Top priority in visual hierarchy)
+          Dynamically injected if a stop-loss is triggered.
+          Designed to be read in < 2 seconds.
+        -->
+        <div id="alert-container" class="hidden mb-6 bg-alertBg border-l-4 border-alertRed p-4 rounded-r-md">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <!-- Warning Icon (SVG) -->
+                    <svg class="h-5 w-5 text-alertRed" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-bold text-alertRed" id="alert-title">CRITICAL ALERT</h3>
+                    <div class="mt-1 text-sm text-alertRed" id="alert-message">
+                        <!-- Message populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Grid Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- 
+              Portfolio Chart Card (Spans 2 columns)
+              Central focus point for performance data.
+            -->
+            <div class="col-span-1 lg:col-span-2 bg-white rounded-lg p-6 card-shadow">
+                <h2 class="text-xl font-semibold mb-4">Portfolio Performance</h2>
+                <!-- Chart container (Recharts or Chart.js will mount here) -->
+                <div id="chart-container" class="h-64 w-full flex items-center justify-center bg-gray-50 border border-gray-100 rounded">
+                    <span class="text-gray-400">[ Interactive Chart Area ]</span>
+                </div>
+            </div>
+
+            <!-- 
+              AI Sentiment Thermometer Card
+              Secondary information, grouped separately to avoid clutter.
+            -->
+            <div class="col-span-1 bg-white rounded-lg p-6 card-shadow flex flex-col justify-between">
+                <div>
+                    <h2 class="text-xl font-semibold mb-2">AI Sentiment</h2>
+                    <p class="text-sm text-textSecondary mb-6">Real-time market analysis</p>
+                </div>
+                
+                <div class="flex flex-col items-center justify-center">
+                    <!-- Thermometer Visual Representation -->
+                    <div class="relative h-32 w-8 bg-gray-200 rounded-full overflow-hidden mb-4 border border-gray-300">
+                        <!-- Dynamic fill based on sentiment score -->
+                        <div id="sentiment-fill" class="absolute bottom-0 w-full bg-green-500 rounded-full transition-all duration-1000 ease-out" style="height: 75%;"></div>
+                    </div>
+                    <span id="sentiment-label" class="text-2xl font-bold">Bullish</span>
+                    <span id="sentiment-score" class="text-gray-500 mt-1">Score: 75/100</span>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Frontend logic to fetch API data -->
+    <script>
+        /**
+         * Fetches critical alerts from the Node.js API and updates the DOM.
+         * Enforces the rule of immediate visibility for stop-loss warnings.
+         */
+        async function fetchAlerts() {
+            try {
+                const response = await fetch('/api/alerts');
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    const alert = result.data[0];
+                    const container = document.getElementById('alert-container');
+                    const title = document.getElementById('alert-title');
+                    const msg = document.getElementById('alert-message');
+                    
+                    title.innerText = `${alert.severity} ${alert.type} TRIGGERED`;
+                    msg.innerText = `${alert.asset} price crossed threshold (${alert.threshold}). Current: ${alert.current}`;
+                    
+                    container.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error fetching alerts:', error);
+            }
+        }
+
+        // Initialize dashboard data on load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAlerts();
+            // In a complete implementation, fetch chart data and sentiment here
+        });
+    </script>
+</body>
+</html>
